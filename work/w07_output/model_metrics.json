@@ -1,0 +1,11 @@
+{
+  "method": "Random Forest (honest, grouped split)",
+  "precision": 0.7812448767692224,
+  "recall": 0.4085038290090296,
+  "f1": 0.5364855990242987,
+  "balanced_accuracy": 0.584444659626028,
+  "roc_auc": 0.6295943801454719,
+  "n_train_clients": 36,
+  "n_test_clients": 13,
+  "base_rate_full_table": 0.6325254640274748
+}
