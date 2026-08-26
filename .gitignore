@@ -35,4 +35,4 @@ __pycache__/
 venv/
 .env
 #--------ignoring w01_output____csv
-work/outputs/*.csv
+work/w07_output/*.csv
