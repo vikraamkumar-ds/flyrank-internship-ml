@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Which Pages Are About to Decline? — A Refresh-Priority Study on 79M Rows of Search Data</title>
+<meta name="description" content="A client-grouped, leakage-checked classifier for content decline risk, built on FlyRank's real production search warehouse.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #EEF1EE;
+    --paper: #F7F9F6;
+    --ink: #1B2430;
+    --ink-soft: #5B6670;
+    --line: #D7DBD5;
+    --rust: #B14A26;
+    --rust-soft: #E7DBD3;
+    --teal: #2F6E62;
+    --teal-soft: #DCE7E2;
+    --amber: #B5892C;
+    --radius: 3px;
+    --measure: 700px;
+  }
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } *{ animation: none !important; transition: none !important; } }
+
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    font-size: 17px;
+    line-height: 1.65;
+  }
+
+  a{ color: var(--rust); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover{ color: #8f3a1c; }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible{
+    outline: 2px solid var(--teal); outline-offset: 3px;
+  }
+
+  .mono{ font-family: 'IBM Plex Mono', monospace; }
+  .num{ font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  /* ---------- layout shell ---------- */
+  .shell{
+    display: grid;
+    grid-template-columns: 220px minmax(0,1fr);
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  @media (max-width: 920px){
+    .shell{ grid-template-columns: 1fr; }
+    .ladder{ display:none; }
+  }
+
+  /* ---------- position ladder nav (the signature element) ---------- */
+  .ladder{
+    position: sticky; top: 0; align-self: start;
+    height: 100vh;
+    padding: 48px 0 24px 32px;
+    border-right: 1px solid var(--line);
+  }
+  .ladder-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-soft); margin-bottom: 18px;
+  }
+  .ladder ol{ list-style:none; margin:0; padding:0; position:relative; }
+  .ladder ol::before{
+    content:''; position:absolute; left:9px; top:4px; bottom:4px; width:1px; background: var(--line);
+  }
+  .ladder li{ position:relative; padding: 7px 0 7px 26px; }
+  .ladder .tick{
+    position:absolute; left:4px; top:11px; width:11px; height:11px; border-radius:50%;
+    background: var(--paper); border:1.5px solid var(--ink-soft);
+  }
+  .ladder a{
+    color: var(--ink-soft); text-decoration:none; font-size: 13.5px;
+  }
+  .ladder li.active .tick{ background: var(--rust); border-color: var(--rust); }
+  .ladder li.active a{ color: var(--ink); font-weight: 600; }
+  .ladder .rank{
+    font-family:'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft);
+    display:inline-block; width: 18px;
+  }
+
+  /* ---------- main column ---------- */
+  main{ padding: 0 28px 120px; }
+  .measure{ max-width: var(--measure); margin: 0 auto; }
+
+  section{ padding-top: 64px; scroll-margin-top: 24px; }
+  section:first-of-type{ padding-top: 0; }
+
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace; font-size: 12.5px; letter-spacing:0.09em;
+    text-transform: uppercase; color: var(--rust); margin: 0 0 10px;
+  }
+  h1, h2, h3{ font-family:'Fraunces', serif; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  h2{ font-size: 30px; margin: 0 0 22px; }
+  h3{ font-size: 19px; margin: 28px 0 10px; font-weight: 600; }
+  p{ margin: 0 0 16px; }
+  .lede{ font-size: 19px; color: var(--ink); }
+  .sub{ color: var(--ink-soft); }
+
+  /* ---------- hero ---------- */
+  .hero{
+    padding: 72px 0 40px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 8px;
+  }
+  .hero h1{
+    font-size: clamp(32px, 5vw, 48px);
+    line-height: 1.08;
+    margin: 0 0 20px;
+    max-width: 11.5ch;
+  }
+  .hero .accent{ color: var(--rust); }
+  .hero-meta{
+    display:flex; flex-wrap:wrap; gap: 18px 28px; margin-top: 28px;
+    font-family:'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink-soft);
+  }
+  .hero-meta strong{ color: var(--ink); font-weight: 600; }
+
+  /* ---------- big stat rail (the "position" motif reused) ---------- */
+  .statrail{
+    display:grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line); margin: 36px 0 8px;
+  }
+  @media (max-width: 640px){ .statrail{ grid-template-columns: repeat(2,1fr); } }
+  .statcell{ background: var(--paper); padding: 18px 16px; }
+  .statcell .n{ font-family:'IBM Plex Mono', monospace; font-size: 26px; font-weight:600; color: var(--ink); display:block; }
+  .statcell .l{ font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
+
+  /* ---------- callouts ---------- */
+  .callout{
+    border-left: 3px solid var(--teal);
+    background: var(--teal-soft);
+    padding: 14px 18px; margin: 20px 0; border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: 15.5px;
+  }
+  .callout.warn{ border-color: var(--rust); background: var(--rust-soft); }
+  .callout strong{ display:block; font-family:'IBM Plex Mono', monospace; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; color: var(--ink);}
+
+  /* ---------- tables ---------- */
+  table{ width:100%; border-collapse: collapse; margin: 18px 0 8px; font-size: 14.5px; }
+  th, td{ text-align:left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  th{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; text-transform:uppercase; letter-spacing:.05em; color: var(--ink-soft); font-weight:500; }
+  td.num, th.num{ font-family:'IBM Plex Mono', monospace; text-align:right; }
+  tr.hl td{ background: rgba(177,74,38,0.06); font-weight:600; }
+  .excluded-table td:first-child{ font-family:'IBM Plex Mono', monospace; font-size: 13px; }
+
+  /* ---------- bar charts (real numbers, css bars, no external deps) ---------- */
+  .chart{ margin: 22px 0 30px; }
+  .chart-title{ font-size: 13.5px; font-weight:600; margin-bottom: 4px; }
+  .chart-note{ font-size: 13px; color: var(--ink-soft); margin-bottom: 14px; }
+  .bar-row{ display:grid; grid-template-columns: 168px 1fr 64px; align-items:center; gap: 12px; margin: 7px 0; }
+  .bar-row .label{ font-size: 13.5px; }
+  .bar-track{ background: var(--line); height: 16px; position:relative; border-radius: 2px; overflow:hidden; }
+  .bar-fill{ height:100%; background: var(--ink-soft); }
+  .bar-fill.rust{ background: var(--rust); }
+  .bar-fill.teal{ background: var(--teal); }
+  .bar-fill.amber{ background: var(--amber); }
+  .bar-val{ font-family:'IBM Plex Mono', monospace; font-size: 13px; text-align:right; }
+  .baseline0{ position:absolute; top:0; bottom:0; width:1px; background: var(--ink-soft); opacity:.5; }
+
+  /* ---------- queue / recommendations table ---------- */
+  .queue-row{ display:grid; grid-template-columns: 30px 1fr 90px; gap: 12px; align-items:start; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .queue-rank{ font-family:'IBM Plex Mono', monospace; color: var(--ink-soft); font-size: 13px; padding-top:2px; }
+  .queue-id{ font-family:'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--ink-soft); }
+  .queue-reason{ font-size: 14px; margin: 3px 0 5px; }
+  .queue-action{ font-size: 13.5px; color: var(--teal); font-weight: 500; }
+  .queue-prob{ font-family:'IBM Plex Mono', monospace; font-size: 14px; text-align:right; padding-top:2px; }
+  .queue-prob .bar{ height: 4px; background: var(--rust); margin-top:6px; border-radius:2px; }
+
+  /* ---------- limitations list ---------- */
+  .limits{ list-style:none; margin:0; padding:0; }
+  .limits li{
+    padding: 14px 0 14px 0; border-top: 1px solid var(--line);
+  }
+  .limits li:first-child{ border-top:none; }
+  .limits .tag{
+    font-family:'IBM Plex Mono', monospace; font-size: 11px; text-transform:uppercase;
+    color: var(--rust); letter-spacing:.05em; margin-bottom: 4px; display:block;
+  }
+
+  /* ---------- footer / acknowledgments ---------- */
+  footer{
+    border-top: 1px solid var(--line); margin-top: 60px; padding: 40px 0 60px;
+    font-size: 14.5px; color: var(--ink-soft);
+  }
+  footer a{ color: var(--ink); }
+
+  .kv{ display:grid; grid-template-columns: 160px 1fr; gap: 6px 16px; font-size: 14.5px; margin: 14px 0; }
+  .kv dt{ color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; font-size: 12.5px; }
+  .kv dd{ margin:0; }
+
+  code{ font-family:'IBM Plex Mono', monospace; background: var(--rust-soft); padding: 1px 5px; border-radius: 2px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <nav class="ladder" aria-label="Section navigation">
+    <div class="ladder-label">Position 01–09</div>
+    <ol id="ladder-list">
+      <li data-target="abstract"><span class="tick"></span><span class="rank">01</span><a href="#abstract">Abstract</a></li>
+      <li data-target="intro"><span class="tick"></span><span class="rank">02</span><a href="#intro">Introduction</a></li>
+      <li data-target="data"><span class="tick"></span><span class="rank">03</span><a href="#data">Data</a></li>
+      <li data-target="method"><span class="tick"></span><span class="rank">04</span><a href="#method">Methodology</a></li>
+      <li data-target="results"><span class="tick"></span><span class="rank">05</span><a href="#results">Results</a></li>
+      <li data-target="limits"><span class="tick"></span><span class="rank">06</span><a href="#limits">Limitations</a></li>
+      <li data-target="recs"><span class="tick"></span><span class="rank">07</span><a href="#recs">Recommendations</a></li>
+      <li data-target="repro"><span class="tick"></span><span class="rank">08</span><a href="#repro">Reproducibility</a></li>
+      <li data-target="ack"><span class="tick"></span><span class="rank">09</span><a href="#ack">Acknowledgments</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="measure">
+
+      <div class="hero">
+        <p class="eyebrow">Refresh / Content Opportunity Scoring · Machine Learning Capstone</p>
+        <h1>Which pages are about to lose their <span class="accent">search visibility</span> — and what should you do about each one first?</h1>
+        <p class="lede sub">A client-grouped, leakage-checked classifier for content decline risk, built on 79 million rows of real production search data — with an honest accounting of what it can and can't tell you.</p>
+        <div class="hero-meta">
+          <span><strong>Rows analyzed</strong> 78,835,655</span>
+          <span><strong>Clients</strong> 104</span>
+          <span><strong>Method</strong> Random Forest, grouped split</span>
+          <span><strong>Data source</strong> FlyRank ML Internship warehouse</span>
+        </div>
+      </div>
+
+      <!-- ============ 1. ABSTRACT ============ -->
+      <section id="abstract">
+        <p class="eyebrow">01 · Abstract</p>
+        <h2>Abstract</h2>
+        <p>Content teams can't manually review every page every week, so this study asks a narrow, practical question: given a portfolio of pages, which ones are about to lose search impressions, and what should a human do first? Using FlyRank's real 79-million-row production search warehouse, I built an 8-feature Random Forest classifier on 102,203 content items, validated with a client-grouped split so the reported performance reflects generalization to <em>unseen</em> clients rather than memorized ones. The model beat both a majority-class and a transparent rule-based baseline on that honest split (ROC-AUC 0.63, balanced accuracy 0.59) — modest, but real, and I explicitly quantified the cost of skipping proper grouping: a naive random split overstated the same model's F1 by 0.156. The output is a ranked, reason-coded action queue — not a black box, and not a guarantee about any single page.</p>
+      </section>
+
+      <!-- ============ 2. INTRODUCTION ============ -->
+      <section id="intro">
+        <p class="eyebrow">02 · Introduction</p>
+        <h2>The problem this supports</h2>
+        <p>FlyRank's own March 2026 research paper names its top playbook priority in one line: <em>refresh mature pages before they decay.</em> That's an aggregate, portfolio-level finding — content peaks around 61–90 days and falls off a cliff after roughly nine months. It tells a team <em>that</em> refresh works. It doesn't tell a specific team, looking at their specific 4,000-page portfolio on a Monday morning, <em>which twenty pages to open first.</em></p>
+        <p>That's the gap this work tries to close: not a replacement for the aggregate finding, but a bottom-up, page-level triage layer built on top of it — a classifier a content team could actually run against their own backlog, with a stated reason for every page it flags.</p>
+        <div class="callout">
+          <strong>What this is not</strong>
+          A claim about why Google ranks pages the way it does, or a guarantee about any single page's future. It's a decision-support triage signal — Sections 4–6 show exactly how strong that signal is, and where it stops being trustworthy.
+        </div>
+      </section>
+
+      <!-- ============ 3. DATA ============ -->
+      <section id="data">
+        <p class="eyebrow">03 · Data</p>
+        <h2>Data</h2>
+        <p><strong>Release:</strong> the FlyRank ML Internship warehouse, hosted as Parquet on Hugging Face — a pseudonymized, real production search-performance dataset spanning roughly 17 months across <strong class="num">104</strong> clients.</p>
+
+        <div class="statrail">
+          <div class="statcell"><span class="n">78,835,655</span><span class="l">raw daily rows</span></div>
+          <div class="statcell"><span class="n">104</span><span class="l">clients in warehouse</span></div>
+          <div class="statcell"><span class="n">102,203</span><span class="l">content items modeled</span></div>
+          <div class="statcell"><span class="n">63.3%</span><span class="l">base decline rate</span></div>
+        </div>
+
+        <h3>Tables used</h3>
+        <table>
+          <tr><th>Table</th><th>Role</th></tr>
+          <tr><td><code>fact_content_daily_performance</code></td><td>Daily impressions, clicks, position per content item per client — source of every feature and the label.</td></tr>
+          <tr><td><code>fact_content_query_90d</code></td><td>Trailing 90-day query-mix signals per content item — how a page earns its impressions.</td></tr>
+        </table>
+
+        <h3>Date windows</h3>
+        <p>Anchored to the most recent report date in the daily table at pull time. Two windows: <strong>prev-30</strong> (days 60→31 back) supplies every feature; <strong>last-30</strong> (days 30→0 back) supplies the label only, never a feature.</p>
+
+        <h3>What was excluded, and why</h3>
+        <table class="excluded-table">
+          <tr><th>Field</th><th>Why excluded</th></tr>
+          <tr><td>client / content ID as features</td><td>identifiers, not signal — risks memorizing pages/clients instead of learning a generalizable pattern</td></tr>
+          <tr><td>outcome-window impressions/clicks</td><td>these define the label; using them as features would be leakage by construction</td></tr>
+          <tr><td>raw report date</td><td>encodes <em>when</em>, not <em>what</em> — the windowing already captures the relevant time structure</td></tr>
+          <tr><td>client tenure / access-profile fields</td><td>proxies for client identity, not content behavior — a shortcut risk</td></tr>
+          <tr><td>any client name, URL, or raw query text</td><td>never touched — the release is pseudonymized at the source</td></tr>
+        </table>
+      </section>
+
+      <!-- ============ 4. METHODOLOGY ============ -->
+      <section id="method">
+        <p class="eyebrow">04 · Methodology</p>
+        <h2>Methodology</h2>
+
+        <h3>Label</h3>
+        <p><code>is_declining = 1</code> if <code>impressions_last30 &lt; 0.8 × impressions_prev30</code> — a &gt;20% month-over-month drop. Relative to each page's own history, not a portfolio average, since baseline traffic varies enormously by page.</p>
+
+        <h3>Features</h3>
+        <p>Eight signals, every one sourced from the prev-30 window or the query-mix table — never the outcome window: prior impressions, clicks, average position, click-through rate, distinct queries ranked for, rare-impression share, anonymized-impression share, and top-query concentration.</p>
+
+        <h3>Baselines — two, not one</h3>
+        <p>A majority-class rule (always predict the more common label) and a transparent hand-rule: flag a page if its average position sits in the worst quartile.</p>
+
+        <h3>Validation design</h3>
+        <p>Client-grouped split (<code>GroupShuffleSplit</code> on client ID): 36 training clients, 13 held-out test clients, zero overlap, confirmed by assertion. A random row-level split was tested and rejected — it let the model partly learn <em>which client</em> a row belonged to, not a pattern that generalizes. The cost of that mistake is measured directly in Section 5.</p>
+
+        <h3>Leakage checks</h3>
+        <p>Three checks, run against the final feature set: (1) confirmed the label-defining column never appears among the features; (2) a single-feature AUC sweep — nothing exceeded <strong class="num">0.616</strong>, well under the 0.90 red-flag line; (3) an explicit date-math check confirming the query-mix table's 90-day window partially overlaps the 30-day outcome window.</p>
+        <div class="callout warn">
+          <strong>Named limitation, not hidden</strong>
+          Because of that overlap, the four query-mix features are treated as directional/descriptive throughout this work, not strictly pre-outcome predictors.
+        </div>
+      </section>
+
+      <!-- ============ 5. RESULTS ============ -->
+      <section id="results">
+        <p class="eyebrow">05 · Results</p>
+        <h2>Results, against baseline</h2>
+        <p>Same held-out client group, same metrics, three methods:</p>
+
+        <table>
+          <tr><th>Method</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th><th class="num">Balanced acc.</th><th class="num">ROC-AUC</th></tr>
+          <tr><td>Majority-class baseline</td><td class="num">0.677</td><td class="num">1.000</td><td class="num">0.807</td><td class="num">0.500</td><td class="num">—</td></tr>
+          <tr><td>Rule-based (worst position quartile)</td><td class="num">0.673</td><td class="num">0.187</td><td class="num">0.293</td><td class="num">0.498</td><td class="num">—</td></tr>
+          <tr class="hl"><td>Random Forest (final, honest split)</td><td class="num">0.782</td><td class="num">0.411</td><td class="num">0.538</td><td class="num">0.585</td><td class="num">0.630</td></tr>
+        </table>
+        <p class="sub" style="font-size:14px">Raw F1 is misleading here: "declining" is the majority class (63%), so a rule that always guesses it scores a deceptively high F1 for free. Balanced accuracy and ROC-AUC aren't fooled by that imbalance — by those columns, the model clears the baseline (0.585 / 0.630 vs. ~0.50).</p>
+
+        <h3>The cost of skipping a grouped split</h3>
+        <div class="chart">
+          <div class="chart-title">F1, same model and features, two split designs</div>
+          <div class="chart-note">A naive random row split overstates performance because rows from the same client leak into both train and test.</div>
+          <div class="bar-row">
+            <span class="label">Random split (dishonest)</span>
+            <div class="bar-track"><div class="bar-fill rust" style="width:69.5%"></div></div>
+            <span class="bar-val">0.695</span>
+          </div>
+          <div class="bar-row">
+            <span class="label">Grouped by client (honest)</span>
+            <div class="bar-track"><div class="bar-fill teal" style="width:53.8%"></div></div>
+            <span class="bar-val">0.538</span>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>Gap</strong>
+          +0.156 F1 — the honest cost of ignoring client grouping, not a real capability the model has.
+        </div>
+
+        <h3>What the model actually relies on</h3>
+        <div class="chart">
+          <div class="chart-title">Permutation importance (test-set, F1-based)</div>
+          <div class="chart-note">Shuffles one feature at a time and measures the drop in score — a more honest read than built-in impurity importance, which is biased toward continuous columns like these.</div>
+          <div class="bar-row"><span class="label">Distinct queries ranked for</span><div class="bar-track"><div class="baseline0" style="left:60%"></div><div class="bar-fill teal" style="width:66%"></div></div><span class="bar-val">+0.019</span></div>
+          <div class="bar-row"><span class="label">Top-query concentration</span><div class="bar-track"><div class="baseline0" style="left:60%"></div><div class="bar-fill" style="width:58%"></div></div><span class="bar-val">−0.002</span></div>
+          <div class="bar-row"><span class="label">Rare-impression share</span><div class="bar-track"><div class="baseline0" style="left:60%"></div><div class="bar-fill" style="width:56%"></div></div><span class="bar-val">−0.004</span></div>
+          <div class="bar-row"><span class="label">Average position</span><div class="bar-track"><div class="baseline0" style="left:60%"></div><div class="bar-fill" style="width:42%"></div></div><span class="bar-val">−0.031</span></div>
+          <div class="bar-row"><span class="label">Prior clicks</span><div class="bar-track"><div class="baseline0" style="left:60%"></div><div class="bar-fill" style="width:38%"></div></div><span class="bar-val">−0.037</span></div>
+        </div>
+        <p class="sub" style="font-size:14px">A genuinely surprising result: <strong>average position</strong> — the single feature FlyRank's own paper found most predictive of its Health Score (43% importance) — carries almost no unique signal here once the other features are already in the model. Only query breadth shows a clear, positive, independent contribution.</p>
+
+        <h3>Where it's wrong</h3>
+        <p>False positive rate <strong class="num">7.8%</strong> of the test set; false negative rate <strong class="num">39.9%</strong>. Errors skew toward missed declines, not false alarms — worth knowing for how a team weights this in triage.</p>
+      </section>
+
+      <!-- ============ 6. LIMITATIONS ============ -->
+      <section id="limits">
+        <p class="eyebrow">06 · Limitations</p>
+        <h2>What this work cannot claim</h2>
+        <ul class="limits">
+          <li><span class="tag">Not causal</span>Every result here is observational. Position, CTR, and query-mix are associated with decline, not proven causes of it.</li>
+          <li><span class="tag">Modest power</span>ROC-AUC of 0.630 is meaningfully better than chance but far from strong. Recall of 0.41 means the model misses roughly 6 in 10 pages that actually go on to decline — a triage aid, not a certainty engine.</li>
+          <li><span class="tag">Client scope</span>Validated on 49 clients (36 train / 13 test) out of 104 in the warehouse. No claim is made about clients outside this mix of industries and traffic patterns.</li>
+          <li><span class="tag">Window overlap</span>The four query-mix features have a known partial overlap with the outcome window (Section 4) — treated as directional, not strictly pre-outcome.</li>
+          <li><span class="tag">No external context</span>The model has no way to distinguish an organic decline from a seasonal dip, a manual penalty, or a site migration.</li>
+          <li><span class="tag">Fold asymmetry</span>Train/test base rates differ (58.7% vs. 67.7%) purely because of which clients landed in each fold — an expected consequence of grouping by a relatively small number of clients, not an error.</li>
+        </ul>
+      </section>
+
+      <!-- ============ 7. RECOMMENDATIONS ============ -->
+      <section id="recs">
+        <p class="eyebrow">07 · Ranked recommendations</p>
+        <h2>The action queue</h2>
+        <p>Every flagged page gets a decline probability, a reason code built from the specific signal driving that score, and a concrete next action — not just a number.</p>
+
+        <div class="queue">
+          <div class="queue-row">
+            <span class="queue-rank">01</span>
+            <div>
+              <div class="queue-reason">High query concentration · Weak average position</div>
+              <div class="queue-action">→ Diversify topic coverage to reduce single-query dependency</div>
+              <div class="queue-id">content_1a795b9e…</div>
+            </div>
+            <div class="queue-prob">0.938<div class="bar" style="width:93.8%"></div></div>
+          </div>
+          <div class="queue-row">
+            <span class="queue-rank">02</span>
+            <div>
+              <div class="queue-reason">High query concentration · Weak average position</div>
+              <div class="queue-action">→ Diversify topic coverage to reduce single-query dependency</div>
+              <div class="queue-id">content_6648c204…</div>
+            </div>
+            <div class="queue-prob">0.919<div class="bar" style="width:91.9%"></div></div>
+          </div>
+          <div class="queue-row">
+            <span class="queue-rank">03</span>
+            <div>
+              <div class="queue-reason">Under-clicking relative to peers · Low query breadth</div>
+              <div class="queue-action">→ Rewrite title / meta description to improve click-through</div>
+              <div class="queue-id">content_83f5dc60…</div>
+            </div>
+            <div class="queue-prob">0.910<div class="bar" style="width:91.0%"></div></div>
+          </div>
+          <div class="queue-row">
+            <span class="queue-rank">04</span>
+            <div>
+              <div class="queue-reason">Weak average position · Under-clicking relative to peers</div>
+              <div class="queue-action">→ Refresh content and rebuild internal links</div>
+              <div class="queue-id">content_fb374f23…</div>
+            </div>
+            <div class="queue-prob">0.903<div class="bar" style="width:90.3%"></div></div>
+          </div>
+          <div class="queue-row">
+            <span class="queue-rank">05</span>
+            <div>
+              <div class="queue-reason">High query concentration · Weak average position</div>
+              <div class="queue-action">→ Diversify topic coverage to reduce single-query dependency</div>
+              <div class="queue-id">content_5d7f94de…</div>
+            </div>
+            <div class="queue-prob">0.901<div class="bar" style="width:90.1%"></div></div>
+          </div>
+        </div>
+
+        <h3>Human review — required, not optional</h3>
+        <p>No page in this queue should be auto-published, auto-merged, or auto-redirected. Every flag needs a human check: does the drop line up with something the model can't see (seasonality, a tracked algorithm update, a site change)? Is the reason code what a person reading the page would actually conclude? Is the page worth the effort given its traffic volume?</p>
+
+        <h3>Monitoring triggers</h3>
+        <p>Retrain or re-evaluate if: the portfolio's base decline rate drifts meaningfully from 63.3%; feature medians shift from training distributions; held-out balanced accuracy drops below ~0.585 on a fresh client group; or on a fixed quarterly floor regardless of drift signals.</p>
+      </section>
+
+      <!-- ============ 8. REPRODUCIBILITY ============ -->
+      <section id="repro">
+        <p class="eyebrow">08 · Reproducibility</p>
+        <h2>Reproducibility</h2>
+        <dl class="kv">
+          <dt>Repository</dt><dd><a href="https://github.com/vikraamkumar-ds/flyrank-internship-ml">github.com/vikraamkumar-ds/flyrank-internship-ml</a></dd>
+          <dt>Full pipeline</dt><dd><code>work/notebooks/capstone.ipynb</code></dd>
+          <dt>Prior stages</dt><dd><code>w03</code>–<code>w07</code> in <code>work/notebooks/</code>, each independently runnable</dd>
+          <dt>Metrics (raw)</dt><dd><code>work/outputs/capstone_metrics.json</code></dd>
+          <dt>Figures</dt><dd><code>work/figures/</code></dd>
+          <dt>Data source</dt><dd><a href="https://huggingface.co/datasets/FlyRank/internship-warehouse">huggingface.co/datasets/FlyRank/internship-warehouse</a> (gated, free access)</dd>
+          <dt>Random seed</dt><dd><span class="num">42</span>, fixed throughout</dd>
+        </dl>
+        <p class="sub" style="font-size:14.5px">Every table and chart above traces back to a committed notebook cell — nothing here was hand-typed from memory.</p>
+      </section>
+
+      <!-- ============ 9. ACKNOWLEDGMENTS ============ -->
+      <section id="ack">
+        <p class="eyebrow">09 · Acknowledgments &amp; data credit</p>
+        <h2>Acknowledgments</h2>
+        <p>Built on the FlyRank ML Internship dataset — <a href="https://flyrank.ai">flyrank.ai</a>.</p>
+      </section>
+
+      <footer>
+        <p>Refresh / Content Opportunity Scoring — ML Capstone. Decision-support research, not a production system. All claims above are observed, measured, or directional — see Limitations.</p>
+      </footer>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  // Scrollspy for the position ladder — active section gets the filled tick
+  const sections = document.querySelectorAll('main section[id]');
+  const items = document.querySelectorAll('.ladder li');
+  const map = {};
+  items.forEach(li => map[li.dataset.target] = li);
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const li = map[entry.target.id];
+      if (!li) return;
+      if (entry.isIntersecting){
+        items.forEach(i => i.classList.remove('active'));
+        li.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+
+  sections.forEach(s => io.observe(s));
+</script>
+
+</body>
+</html>
